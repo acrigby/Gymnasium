@@ -53,8 +53,8 @@ register(
 register(
     id="Acrobot-v1",
     entry_point="gymnasium.envs.classic_control.acrobot:AcrobotEnv",
-    reward_threshold=-100.0,
-    max_episode_steps=500,
+    reward_threshold=-100,
+    max_episode_steps=200,
 )
 
 
