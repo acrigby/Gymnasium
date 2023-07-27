@@ -4,6 +4,11 @@ from typing import Optional
 import numpy as np
 from numpy import cos, pi, sin
 
+from dymola.dymola_interface import DymolaInterface
+dymola = DymolaInterface()
+
+import matplotlib.pyplot as plt
+
 import gymnasium as gym
 from gymnasium import Env, spaces
 from gymnasium.envs.classic_control import utils
@@ -146,6 +151,11 @@ class AcrobotEnv(Env):
     }
 
     dt = 0.2
+    
+    results = {}
+    variables = ["Time","revolute1.phi","revolute2.phi","revolute1.w","revolute2.w"]
+    for key in variables:
+        results[key] = []
 
     LINK_LENGTH_1 = 1.0  # [m]
     LINK_LENGTH_2 = 1.0  # [m]
@@ -158,7 +168,7 @@ class AcrobotEnv(Env):
     MAX_VEL_1 = 4 * pi
     MAX_VEL_2 = 9 * pi
 
-    AVAIL_TORQUE = [-2.0,-1.0, 0.0, +1, +2]
+    AVAIL_TORQUE = [-20,-10, 0.0, +10,20]
 
     torque_noise_max = 0.0
 
@@ -184,6 +194,7 @@ class AcrobotEnv(Env):
         self.state = None
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        dymola.clear()
         super().reset(seed=seed)
         # Note that if you use custom reset bounds, it may lead to out-of-bound
         # state/observations.
@@ -193,6 +204,48 @@ class AcrobotEnv(Env):
         self.state = self.np_random.uniform(low=low, high=high, size=(4,)).astype(
             np.float32
         )
+        
+        self.t = 0.1
+        
+        
+        self.results = {}
+        for key in self.variables:
+            self.results[key] = []
+            
+        dymola.openModel("DoublePendulum")
+        
+        dymola.translateModel("DoublePendulum")
+        
+        var = "phistart1 ="+ str(-np.pi/2 + self.state[0])
+        print(var)
+        dymola.ExecuteCommand(var)
+        
+        var = "wstart1 ="+ str(0)
+        print(var)
+        dymola.ExecuteCommand(var)
+        
+        var = "phistart2 ="+ str(self.state[1])
+        print(var)
+        dymola.ExecuteCommand(var)
+        
+        var = "wstart1 ="+ str(0)
+        print(var)
+        dymola.ExecuteCommand(var)
+                
+        
+        result = dymola.simulateModel("DoublePendulum", startTime=0, stopTime = 0.1, outputInterval=0.01, method="Esdirk45a",resultFile="DoublePendulum");
+
+        if not result:
+            print("Simulation failed. Below is the translation log.")
+            log = dymola.getLastErrorLog()
+            print(log)
+            dymola.exit(1)
+            
+        trajsize = dymola.readTrajectorySize("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/DoublePendulum.mat")
+        signals=dymola.readTrajectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/DoublePendulum.mat", self.variables, trajsize)
+            
+        for i in range(0,len(self.variables),1):
+                self.results[self.variables[i]].extend(signals[i])
 
         if self.render_mode == "human":
             self.render()
@@ -213,15 +266,20 @@ class AcrobotEnv(Env):
         # _dsdt
         s_augmented = np.append(s, torque)
 
-        ns = rk4(self._dsdt, s_augmented, [0, self.dt])
+        #__________________________________________________________________________________EDIT THIS - dymola needs to return a state vector
+        ns, results = DymolaDyn(s_augmented, self.t, self.variables, self.results)
+        #__________________________________________________________________________________EDIT THIS
 
         ns[0] = wrap(ns[0], -pi, pi)
         ns[1] = wrap(ns[1], -pi, pi)
         ns[2] = bound(ns[2], -self.MAX_VEL_1, self.MAX_VEL_1)
         ns[3] = bound(ns[3], -self.MAX_VEL_2, self.MAX_VEL_2)
+        
         self.state = ns
         terminated = self._terminal()
         reward = -1.0 if not terminated else 0.0
+    
+        self.t = self.t + 0.1
 
         if self.render_mode == "human":
             self.render()
@@ -239,47 +297,6 @@ class AcrobotEnv(Env):
         assert s is not None, "Call reset before using AcrobotEnv object."
         return bool(-cos(s[0]) - cos(s[1] + s[0]) > 1.0)
 
-    def _dsdt(self, s_augmented):
-        m1 = self.LINK_MASS_1
-        m2 = self.LINK_MASS_2
-        l1 = self.LINK_LENGTH_1
-        lc1 = self.LINK_COM_POS_1
-        lc2 = self.LINK_COM_POS_2
-        I1 = self.LINK_MOI
-        I2 = self.LINK_MOI
-        g = 9.8
-        a = s_augmented[-1]
-        s = s_augmented[:-1]
-        theta1 = s[0]
-        theta2 = s[1]
-        dtheta1 = s[2]
-        dtheta2 = s[3]
-        d1 = (
-            m1 * lc1**2
-            + m2 * (l1**2 + lc2**2 + 2 * l1 * lc2 * cos(theta2))
-            + I1
-            + I2
-        )
-        d2 = m2 * (lc2**2 + l1 * lc2 * cos(theta2)) + I2
-        phi2 = m2 * lc2 * g * cos(theta1 + theta2 - pi / 2.0)
-        phi1 = (
-            -m2 * l1 * lc2 * dtheta2**2 * sin(theta2)
-            - 2 * m2 * l1 * lc2 * dtheta2 * dtheta1 * sin(theta2)
-            + (m1 * lc1 + m2 * l1) * g * cos(theta1 - pi / 2)
-            + phi2
-        )
-        if self.book_or_nips == "nips":
-            # the following line is consistent with the description in the
-            # paper
-            ddtheta2 = (a + d2 / d1 * phi1 - phi2) / (m2 * lc2**2 + I2 - d2**2 / d1)
-        else:
-            # the following line is consistent with the java implementation and the
-            # book
-            ddtheta2 = (
-                a + d2 / d1 * phi1 - m2 * l1 * lc2 * dtheta1**2 * sin(theta2) - phi2
-            ) / (m2 * lc2**2 + I2 - d2**2 / d1)
-        ddtheta1 = -(d2 * ddtheta2 + phi1) / d1
-        return dtheta1, dtheta2, ddtheta1, ddtheta2, 0.0
 
     def render(self):
         if self.render_mode is None:
@@ -420,51 +437,43 @@ def bound(x, m, M=None):
     # bound x between min (m) and Max (M)
     return min(max(x, m), M)
 
+#__________________________________________________________________________________EDIT THIS
+#return yout which is a list of 4 observations theta1, theta2, omega1, omega2
 
-def rk4(derivs, y0, t):
+def DymolaDyn(y0 , t,  variables, results):
     """
-    Integrate 1-D or N-D system of ODEs using 4-th order Runge-Kutta.
-
-    Example for 2D system:
-
-        >>> def derivs(x):
-        ...     d1 =  x[0] + 2*x[1]
-        ...     d2 =  -3*x[0] + 4*x[1]
-        ...     return d1, d2
-
-        >>> dt = 0.0005
-        >>> t = np.arange(0.0, 2.0, dt)
-        >>> y0 = (1,2)
-        >>> yout = rk4(derivs, y0, t)
-
-    Args:
-        derivs: the derivative of the system and has the signature ``dy = derivs(yi)``
-        y0: initial state vector
-        t: sample times
-
-    Returns:
-        yout: Runge-Kutta approximation of the ODE
+    Dymola dynamics for the time step
     """
+    
+    dymola.ExecuteCommand('importInitial("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/dsfinal.txt")')
+    var = "const.k ="+ str(y0[-1])
+    print(var)
+    dymola.ExecuteCommand(var)
 
-    try:
-        Ny = len(y0)
-    except TypeError:
-        yout = np.zeros((len(t),), np.float_)
-    else:
-        yout = np.zeros((len(t), Ny), np.float_)
+    result = dymola.simulateModel("DoublePendulum", startTime  = t, stopTime = t+0.1, numberOfIntervals=0, outputInterval=0.01, method="Esdirk45a", resultFile="DoublePendulum")
 
-    yout[0] = y0
+    if not result:
+        print("Simulation failed. Below is the translation log.")
+        log = dymola.getLastErrorLog()
+        print(log)
+        dymola.exit(1)
 
-    for i in np.arange(len(t) - 1):
-        this = t[i]
-        dt = t[i + 1] - this
-        dt2 = dt / 2.0
-        y0 = yout[i]
+    trajsize = dymola.readTrajectorySize("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/DoublePendulum.mat")
+    signals=dymola.readTrajectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/DoublePendulum.mat", variables, trajsize)
+    
+    for i in range(0,len(variables),1):
+        results[variables[i]].extend(signals[i])
 
-        k1 = np.asarray(derivs(y0))
-        k2 = np.asarray(derivs(y0 + dt2 * k1))
-        k3 = np.asarray(derivs(y0 + dt2 * k2))
-        k4 = np.asarray(derivs(y0 + dt * k3))
-        yout[i + 1] = y0 + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+    theta1 = results["revolute1.phi"][-1] + np.pi/2
+    theta2 = results["revolute2.phi"][-1]
+    omega1 = results["revolute1.w"][-1]
+    omega2 = results["revolute2.w"][-1]
+    
+    
+    yout = [theta1,theta2,omega1,omega2]
+    
+    
     # We only care about the final timestep and we cleave off action value which will be zero
-    return yout[-1][:4]
+    return yout, results
+
+#__________________________________________________________________________________EDIT THIS
