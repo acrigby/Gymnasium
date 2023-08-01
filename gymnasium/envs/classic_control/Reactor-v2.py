@@ -198,10 +198,10 @@ class ReactorEnv(Env):
         self.clock = None
         self.isopen = True
         high = np.array(
-            [676, 150e5, 41e6, 10], dtype=np.float32
+            [20, 10, 6, 10], dtype=np.float32
         )
         low = np.array(
-            [671, 135e5,34e6, -10], dtype=np.float32
+            [-20, -10, -6, -10], dtype=np.float32
         )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
         self.action_space = spaces.Discrete(3)
@@ -304,7 +304,7 @@ class ReactorEnv(Env):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
         return np.array(
-            [s[0], s[1], s[2], s[3]], dtype=np.float32
+            [s[0]-672.8, s[1]-58, (s[2]-30e6)/1e6, s[3]], dtype=np.float32
         )
 
     def _terminal(self):
