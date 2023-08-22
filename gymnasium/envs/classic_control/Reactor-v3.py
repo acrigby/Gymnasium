@@ -25,6 +25,8 @@ __credits__ = [
 __license__ = "BSD 3-Clause"
 __author__ = "Christoph Dann <cdann@cdann.de>"
 
+"""Adapted from the acrobot enviroment in Gymnasium by Aidan Rigby aidan.rigby@inl.gov to perform Dymola Optimisation"""
+
 # SOURCE:
 # https://github.com/rlpy/rlpy/blob/master/rlpy/Domains/Acrobot.py
 
@@ -33,70 +35,60 @@ class ReactorEnv(Env):
     """
     ## Description
 
-    The Acrobot environment is based on Sutton's work in
-    ["Generalization in Reinforcement Learning: Successful Examples Using Sparse Coarse Coding"](https://papers.nips.cc/paper/1995/hash/8f1d43620bc6bb580df6e80b0dc05c48-Abstract.html)
-    and [Sutton and Barto's book](http://www.incompleteideas.net/book/the-book-2nd.html).
-    The system consists of two links connected linearly to form a chain, with one end of
-    the chain fixed. The joint between the two links is actuated. The goal is to apply
-    torques on the actuated joint to swing the free end of the linear chain above a
-    given height while starting from the initial state of hanging downwards.
-
-    As seen in the **Gif**: two blue links connected by two green joints. The joint in
-    between the two links is actuated. The goal is to swing the free end of the outer-link
-    to reach the target height (black horizontal line above system) by applying torque on
-    the actuator.
+    This enviorment interfaces with the L2_boundaries balance of plant model found in the HYBRID library of 
+    modelica models developped at Idaho National Laboratory: https://github.com/idaholab/HYBRID. The aim is 
+    to find an optimised feedforward signal to provide to the feedwater coolant pump to minimise the temperature
+    deviation at the steam generator exit.
+    
+    Details of this code can be found at {osti link}
 
     ## Action Space
 
-    The action is discrete, deterministic, and represents the torque applied on the actuated
-    joint between the two links.
+    The action is discrete, deterministic, and represents the change in the feedforward signal applied on the FWCP.
 
     | Num | Action                                | Unit         |
     |-----|---------------------------------------|--------------|
-    | 0   | apply -1 torque to the actuated joint | torque (N m) |
-    | 1   | apply 0 torque to the actuated joint  | torque (N m) |
-    | 2   | apply 1 torque to the actuated joint  | torque (N m) |
+    | 0   | change the feedforward signal by -0.7 | mass flow rate (kg/s) |
+    | 1   | change the feedforward signal by -0.2 | mass flow rate (kg/s) |
+    | 2   | change the feedforward signal by -0.1 | mass flow rate (kg/s) |
+    | 3   | change the feedforward signal by  0   | mass flow rate (kg/s) |
+    | 4   | change the feedforward signal by  0.1 | mass flow rate (kg/s) |
+    | 5   | change the feedforward signal by  0.2 | mass flow rate (kg/s) |
+    | 6   | change the feedforward signal by  0.7 | mass flow rate (kg/s) |
 
     ## Observation Space
 
-    The observation is a `ndarray` with shape `(6,)` that provides information about the
-    two rotational joint angles as well as their angular velocities:
+    The observation is a `ndarray` with shape `(4,)` that provides information about the
+    steam generator outlet temperature and power demand as well as current pump states. The states are normalised 
+    to aid initialisation:
 
-    | Num | Observation                  | Min                 | Max               |
-    |-----|------------------------------|---------------------|-------------------|
-    | 0   | Cosine of `theta1`           | -1                  | 1                 |
-    | 1   | Sine of `theta1`             | -1                  | 1                 |
-    | 2   | Cosine of `theta2`           | -1                  | 1                 |
-    | 3   | Sine of `theta2`             | -1                  | 1                 |
-    | 4   | Angular velocity of `theta1` | ~ -12.567 (-4 * pi) | ~ 12.567 (4 * pi) |
-    | 5   | Angular velocity of `theta2` | ~ -28.274 (-9 * pi) | ~ 28.274 (9 * pi) |
-
-    where
-    - `theta1` is the angle of the first joint, where an angle of 0 indicates the first link is pointing directly
-    downwards.
-    - `theta2` is ***relative to the angle of the first link.***
-        An angle of 0 corresponds to having the same angle between the two links.
-
-    The angular velocities of `theta1` and `theta2` are bounded at ±4π, and ±9π rad/s respectively.
-    A state of `[1, 0, 1, 0, ..., ...]` indicates that both links are pointing downwards.
+    | Num | Observation                        |Normalization       | Min                 | Max               |
+    |-----|------------------------------------|--------------------|---------------------|-------------------|
+    | 0   | SG Outlet Temperature              |   T_out - 673.1    | -8                  | 8                 |
+    | 1   | FWCP mass flow rate                |    m_pump-58       | -10                 | 10                |
+    | 2   | Turbine Electrical Power Output    | Q_e - 30 MW / 1 MW | -6                  |  6                | 
+    | 3   | Pump Controller Feedforward Signal |      N/A           | -10                 | 10                |
 
     ## Rewards
 
-    The goal is to have the free end reach a designated target height in as few steps as possible,
-    and as such all steps that do not reach the goal incur a reward of -1.
-    Achieving the target height results in termination with a reward of 0. The reward threshold is -100.
+	The reward takes the form of a scalar variable that adds a contribution to the score at each time step 
+    dependent on how close the output temperature is at the end of that time step to the goal condition of 400°C. 
+    This takes the form of a linear function described by equation 1.
+    █(R[t]= 8-|〖(T〗_out [t]-673.15)|#1)
+
 
     ## Starting State
 
-    Each parameter in the underlying state (`theta1`, `theta2`, and the two angular velocities) is initialized
-    uniformly between -0.1 and 0.1. This means both links are pointing downwards with some initial stochasticity.
+    The starting state is initialised using a reset file in the host repository of Starting_9900.txt
 
     ## Episode End
 
-    The episode ends if one of the following occurs:
-    1. Termination: The free end reaches the target height, which is constructed as:
-    `-cos(theta1) - cos(theta2 + theta1) > 1.0`
-    2. Truncation: Episode length is greater than 500 (200 for v0)
+    The episode is terminated, and the score returned under two conditions. 
+    1. If the SG output temperature at the end of any given time step does not lie in the 
+    range: 664.15 < T_out < 682.15. This reduces the time the simulation takes to fully learn the sub space 
+    by penalizing bad states. 
+    2. The simulation has a run time set to 100 steps. After this the change in the 
+    feedforward signal is assumed to be zero as the temperature should have returned to its nominal state
 
     ## Arguments
 
@@ -104,104 +96,72 @@ class ReactorEnv(Env):
 
     ```python
     import gymnasium as gym
-    env = gym.make('Acrobot-v1')
+    env = gym.make('Reactor-v3')
     ```
 
-    On reset, the `options` parameter allows the user to change the bounds used to determine
-    the new random state.
-
-    By default, the dynamics of the acrobot follow those described in Sutton and Barto's book
-    [Reinforcement Learning: An Introduction](http://incompleteideas.net/book/11/node4.html).
-    However, a `book_or_nips` parameter can be modified to change the pendulum dynamics to those described
-    in the original [NeurIPS paper](https://papers.nips.cc/paper/1995/hash/8f1d43620bc6bb580df6e80b0dc05c48-Abstract.html).
-
-    ```python
-    # To change the dynamics as described above
-    env.unwrapped.book_or_nips = 'nips'
-    ```
-
-    See the following note for details:
-
-    > The dynamics equations were missing some terms in the NIPS paper which
-            are present in the book. R. Sutton confirmed in personal correspondence
-            that the experimental results shown in the paper and the book were
-            generated with the equations shown in the book.
-            However, there is the option to run the domain with the paper equations
-            by setting `book_or_nips = 'nips'`
-
-
-    ## Version History
-
-    - v1: Maximum number of steps increased from 200 to 500. The observation space for v0 provided direct readings of
-    `theta1` and `theta2` in radians, having a range of `[-pi, pi]`. The v1 observation space as described here provides the
-    sine and cosine of each angle instead.
-    - v0: Initial versions release (1.0.0) (removed from gymnasium for v1)
 
     ## References
-    - Sutton, R. S. (1996). Generalization in Reinforcement Learning: Successful Examples Using Sparse Coarse Coding.
-        In D. Touretzky, M. C. Mozer, & M. Hasselmo (Eds.), Advances in Neural Information Processing Systems (Vol. 8).
-        MIT Press. https://proceedings.neurips.cc/paper/1995/file/8f1d43620bc6bb580df6e80b0dc05c48-Paper.pdf
-    - Sutton, R. S., Barto, A. G. (2018 ). Reinforcement Learning: An Introduction. The MIT Press.
+    - OSTI report.
     """
-
-    metadata = {
-        "render_modes": [],
-        "render_fps": 15,
-    }
     
     # Instantiate the Dymola interface and start Dymola
     dymola = DymolaInterface()
     print(dymola.DymolaVersion())
 
+    #Define Model File
     model = 'ControlTests.SteamTurbine_L2_OpenFeedHeat_Test2'
      
+    #Define Previous working directory
     dymola.AddModelicaPath("C:/Users/localuser/Documents/Dymola")
 
+    #open the dymola model in the environment 
     dymola.openModel(model)
 
+    #Add any package dependencies to the enviroment and change working directory
     dymola.openModel("C:/Users/localuser/HYBRID/Models/NHES/package.mo")
     dymola.openModel("C:/Users/localuser/HYBRID/TRANSFORM-Library/TRANSFORM-Library/TRANSFORM/package.mo")
     dymola.ExecuteCommand('Modelica.Utilities.System.setWorkDirectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts")') 
-        
+    
+    #reopen model in new working directory
     dymola.openModel(model)
 
+    #translate the model and create dymosym files
     dymola.translateModel(model)
-            
+    
+    #Initialise the model and create first dsfinal file
     result = dymola.simulateModel(model, startTime=0, stopTime = 9900, outputInterval=100, method="Esdirk45a",resultFile="SteamTurbine_L2_OpenFeedHeat_Test2")
 
+    #error out if initial simulation fails
     if not result:
         print("Simulation failed. Below is the translation log.")
         log = dymola.getLastErrorLog()
         print(log)
         dymola.exit(1)
 
+    #set time for one step
     dt = 5
     
+    #Set a dictionary to hold results based on the Dymola variables
     results = {}
     variables = ["Time","BOP.sensor_pT.T","BOP.sensor_pT.p","BOP.sensor_T2.T","BOP.TCV.dp","pump_SimpleMassFlow1.m_flow", "ramp.y", "boundary.Q_flow_ext","BOP.sensorW.W","FeedForward.y"]
     for key in variables:
         results[key] = []
 
-    AVAIL_MDOT = [-0.5,-0.2,-0.1, 0 , 0.1, 0.2, 0.5]
-
-    torque_noise_max = 0.0
-    
-    #: use dynamics equations from the nips paper or the book
-    book_or_nips = "book"
-    action_arrow = None
-    domain_fig = None
+    #define action space
+    AVAIL_MDOT =  [-0.7,-0.2,-0.1, 0 , 0.1, 0.2, 0.7]
     actions_num = 7
 
+    #initialise the class and major variables
     def __init__(self, render_mode: Optional[str] = None):
         self.render_mode = render_mode
         self.screen = None
         self.clock = None
         self.isopen = True
         high = np.array(
-            [20, 10, 6, 10], dtype=np.float32
+            [8, 10, 6, 10], dtype=np.float32
         )
         low = np.array(
-            [-20, -10, -6, -10], dtype=np.float32
+            [-8, -10, -6, -10], dtype=np.float32
         )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
         self.action_space = spaces.Discrete(7)
@@ -219,19 +179,23 @@ class ReactorEnv(Env):
         #     np.float32
         # )
         
+        #define start time
         self.t = 9900
         
+        #remake dictionary to hold results
         self.results = {}
         
         for key in self.variables:
             self.results[key] = []
-            
+        
+        #read in initial results file
         trajsize = self.dymola.readTrajectorySize("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Original_Temp_Profile.mat")
         signals = self.dymola.readTrajectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Original_Temp_Profile.mat", self.variables, trajsize)
         
         for i in range(0,len(self.variables),1):
             self.results[self.variables[i]].extend(signals[i])
         
+        #Set inital state from orginal results
         Tout = self.results["BOP.sensor_pT.T"][-1]
         Pout = self.results["BOP.sensor_pT.p"][-1]
         Tin = self.results["BOP.sensor_T2.T"][-1]
@@ -241,11 +205,13 @@ class ReactorEnv(Env):
         Qout = self.results["BOP.sensorW.W"][-1]
         FF = self.results["FeedForward.y"][-1]
         
+        #import in model initial conditions
         self.dymola.ExecuteCommand('importInitial("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Starting_9900.txt")')
     
-    
+        #set initial observation
         yout = [Tout,PumpMFlow, Qout, FF]
         print(yout)
+        
         self.state = yout
         
         self.steps_beyond_terminated = None
@@ -258,38 +224,39 @@ class ReactorEnv(Env):
     def step(self, a):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
+        
+        #chose feedforward signal based on action number
         FF = self.AVAIL_MDOT[a]
 
 
-        # Now, augment the state with our force action so it can be passed to
-        # _dsdt
+        # Now, augment the state with our pump feedforward action so it can be passed to
+        # dymola
         s_augmented = np.append(s, FF)
 
-        #__________________________________________________________________________________EDIT THIS - dymola needs to return a state vector
+        #Call main dymola physics dymola returns an observation, results vector and terminal state
         ns, results, terminal = DymolaDyn(self.model, s_augmented, self.t, self.variables, self.results, self.dymola)
-        #__________________________________________________________________________________EDIT THIS
         
-
         print(ns[0])
         self.state = ns
         terminated = terminal
         
-        if (ns[0]< 666.15 or ns[0]>680.15):
+        #check within terminal bounds
+        if (ns[0]< 664.15 or ns[0]>682.15):
             terminated = True
             
+        #increment time
         self.t = self.t + 5
-        
-        if self.t < 3100:
-            terminated = True
             
+        #Define normalise temperature
         x = ns[0]-673.15
         
+        #calculate reward based on linear function
         if not terminated:
-            reward = 6 - abs(x)
+            reward = 8 - abs(x)
         elif self.steps_beyond_terminated is None:
             # Pole just fell!
             self.steps_beyond_terminated = 0
-            reward = 6 - abs(x)
+            reward = 8 - abs(x)
         else:
             if self.steps_beyond_terminated == 0:
                 print(
@@ -303,6 +270,7 @@ class ReactorEnv(Env):
             
         return (self._get_ob(), reward, terminated, False, {})
 
+    #convert state to observation array
     def _get_ob(self):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
@@ -310,20 +278,14 @@ class ReactorEnv(Env):
             [s[0]-673.15, s[1]-58, (s[2]-30e6)/1e6, s[3]], dtype=np.float32
         )
 
+    #Unused terminal class  - can be used to calculate a more complex terminal condition
     def _terminal(self):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
-        return bool(-cos(s[0]) - cos(s[1] + s[0]) > 1.0)
-
-    def close(self):
-        if self.screen is not None:
-            import pygame
-
-            pygame.display.quit()
-            pygame.quit()
-            self.isopen = False
+        return True
 
 
+#Optional bounding class - again unused
 def bound(x, m, M=None):
     """Either have m as scalar, so bound(x,m,M) which returns m <= x <= M *OR*
     have m as length 2 vector, bound(x,m, <IGNORED>) returns m[0] <= x <= m[1].
@@ -342,12 +304,12 @@ def bound(x, m, M=None):
     # bound x between min (m) and Max (M)
     return min(max(x, m), M)
 
-#__________________________________________________________________________________EDIT THIS
-#return yout which is a list of 4 observations theta1, theta2, omega1, omega2
+
 
 def DymolaDyn(model ,y0 , t,  variables, results, dymola):
     """
-    Dymola dynamics for the time step
+    Dymola dynamics for the time step - sets the feedforward component of the PID controller in the dsin file 
+    then simulates 5 seconds of the dynamics
     """
     
     ff = y0[-1]+ y0[-2]
@@ -357,6 +319,7 @@ def DymolaDyn(model ,y0 , t,  variables, results, dymola):
     print(var)
     dymola.ExecuteCommand(var)
 
+    #calls one time step of the simulation
     result = dymola.simulateModel(model, startTime  = t, stopTime = t+5, numberOfIntervals=0, outputInterval=0.1, method="Esdirk45a", resultFile="SteamTurbine_L2_OpenFeedHeat_Test2")
     
     if result:
@@ -387,8 +350,7 @@ def DymolaDyn(model ,y0 , t,  variables, results, dymola):
     
     yout = [Tout, PumpMFlow, Qout, FF]
     
+    #imports the final conditions as initial conditions for the next time step
     dymola.ExecuteCommand('importInitial("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/dsfinal.txt")')
-    # We only care about the final timestep and we cleave off action value which will be zero
+    # We only care about the final timestep and we cleave off action value
     return yout, results, terminal;
-
-#__________________________________________________________________________________EDIT THIS

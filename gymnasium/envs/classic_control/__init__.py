@@ -82,7 +82,7 @@ register(
     id="Reactor-v3",
     entry_point="gymnasium.envs.classic_control.Reactor-v3:ReactorEnv",
     reward_threshold=-100.0,
-    max_episode_steps=620,
+    max_episode_steps=100,
 )
 
 # Phys2d (jax classic control)
