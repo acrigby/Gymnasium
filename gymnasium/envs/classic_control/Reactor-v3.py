@@ -12,6 +12,7 @@ import gymnasium as gym
 from gymnasium import Env, spaces
 from gymnasium.envs.classic_control import utils
 from gymnasium.error import DependencyNotInstalled
+import os
 
 
 __copyright__ = "Copyright 2013, RLPy http://acl.mit.edu/RLPy"
@@ -103,7 +104,6 @@ class ReactorEnv(Env):
     ## References
     - OSTI report.
     """
-    import os
 
     print(os.path.abspath(os.curdir))
     ALPACApath = os.path.abspath(os.curdir)
@@ -120,11 +120,16 @@ class ReactorEnv(Env):
 
     #open the dymola model in the environment 
     # dymola.openModel(model)
+    
+    pathsfile = open(str(ALPACApath)+'/Utilities/ModelicaPaths.txt', 'r')
+    Paths = pathsfile.readlines()
+    for path in Paths:
+        path = path.strip()
+        dymola.openModel(path)
 
     #Add any package dependencies to the enviroment and change working directory
-    dymola.openModel("C:/Users/localuser/HYBRID/Models/NHES/package.mo")
     dymola.openModel(str(ALPACApath)+"/ModelicaFiles/ControlTests.mo")
-    wd = 'Modelica.Utilities.System.setWorkDirectory("' + str(ALPACApath) + '\Runscripts")'
+    wd = 'Modelica.Utilities.System.setWorkDirectory("' + str(ALPACApath) + '\DymolaRunData")'
     print(wd)
     dymola.ExecuteCommand(wd) 
     
@@ -195,8 +200,8 @@ class ReactorEnv(Env):
             self.results[key] = []
         
         #read in initial results file
-        trajsize = self.dymola.readTrajectorySize(str(self.ALPACApath)+"/Runscripts/Original_Temp_Profile.mat")
-        signals = self.dymola.readTrajectory(str(self.ALPACApath)+"/Runscripts/Original_Temp_Profile.mat", self.variables, trajsize)
+        trajsize = self.dymola.readTrajectorySize(str(self.ALPACApath)+"/RunData/Original_Temp_Profile.mat")
+        signals = self.dymola.readTrajectory(str(self.ALPACApath)+"/RunData/Original_Temp_Profile.mat", self.variables, trajsize)
         
         for i in range(0,len(self.variables),1):
             self.results[self.variables[i]].extend(signals[i])
@@ -212,7 +217,7 @@ class ReactorEnv(Env):
         FF = self.results["FeedForward.y"][-1]
         
         #import in model initial conditions
-        self.dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/Runscripts/Starting_9900.txt")')
+        self.dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/RunData/Starting_9900.txt")')
     
         #set initial observation
         yout = [Tout,PumpMFlow, Qout, FF]
@@ -338,8 +343,8 @@ def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
         print(log)
         dymola.exit(1)
 
-    trajsize = dymola.readTrajectorySize(str(self.ALPACApath)+"/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
-    signals=dymola.readTrajectory(str(self.ALPACApath)+"/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
+    trajsize = dymola.readTrajectorySize(str(self.ALPACApath)+"/DymolaRunData/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
+    signals=dymola.readTrajectory(str(self.ALPACApath)+"/DymolaRunData/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
     
     for i in range(0,len(variables),1):
         results[variables[i]].extend(signals[i])
@@ -357,6 +362,6 @@ def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
     yout = [Tout, PumpMFlow, Qout, FF]
     
     #imports the final conditions as initial conditions for the next time step
-    dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/Runscripts/dsfinal.txt")')
+    dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/DymolaRunData/dsfinal.txt")')
     # We only care about the final timestep and we cleave off action value
     return yout, results, terminal;
