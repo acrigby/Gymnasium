@@ -103,7 +103,11 @@ class ReactorEnv(Env):
     ## References
     - OSTI report.
     """
-    
+    import os
+
+    print(os.path.abspath(os.curdir))
+    ALPACApath = os.path.abspath(os.curdir)
+
     # Instantiate the Dymola interface and start Dymola
     dymola = DymolaInterface()
     print(dymola.DymolaVersion())
@@ -111,16 +115,18 @@ class ReactorEnv(Env):
     #Define Model File
     model = 'ControlTests.SteamTurbine_L2_OpenFeedHeat_Test2'
      
-    #Define Previous working directory
-    dymola.AddModelicaPath("C:/Users/localuser/Documents/Dymola")
+    # #Define Previous working directory
+    # dymola.AddModelicaPath("C:/Users/localuser/Documents/Dymola")
 
     #open the dymola model in the environment 
-    dymola.openModel(model)
+    # dymola.openModel(model)
 
     #Add any package dependencies to the enviroment and change working directory
     dymola.openModel("C:/Users/localuser/HYBRID/Models/NHES/package.mo")
-    dymola.openModel("C:/Users/localuser/HYBRID/TRANSFORM-Library/TRANSFORM-Library/TRANSFORM/package.mo")
-    dymola.ExecuteCommand('Modelica.Utilities.System.setWorkDirectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts")') 
+    dymola.openModel(str(ALPACApath)+"/ModelicaFiles/ControlTests.mo")
+    wd = 'Modelica.Utilities.System.setWorkDirectory("' + str(ALPACApath) + '\Runscripts")'
+    print(wd)
+    dymola.ExecuteCommand(wd) 
     
     #reopen model in new working directory
     dymola.openModel(model)
@@ -189,8 +195,8 @@ class ReactorEnv(Env):
             self.results[key] = []
         
         #read in initial results file
-        trajsize = self.dymola.readTrajectorySize("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Original_Temp_Profile.mat")
-        signals = self.dymola.readTrajectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Original_Temp_Profile.mat", self.variables, trajsize)
+        trajsize = self.dymola.readTrajectorySize(str(self.ALPACApath)+"/Runscripts/Original_Temp_Profile.mat")
+        signals = self.dymola.readTrajectory(str(self.ALPACApath)+"/Runscripts/Original_Temp_Profile.mat", self.variables, trajsize)
         
         for i in range(0,len(self.variables),1):
             self.results[self.variables[i]].extend(signals[i])
@@ -206,11 +212,11 @@ class ReactorEnv(Env):
         FF = self.results["FeedForward.y"][-1]
         
         #import in model initial conditions
-        self.dymola.ExecuteCommand('importInitial("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/Starting_9900.txt")')
+        self.dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/Runscripts/Starting_9900.txt")')
     
         #set initial observation
         yout = [Tout,PumpMFlow, Qout, FF]
-        print(yout)
+        #print(yout)
         
         self.state = yout
         
@@ -234,9 +240,9 @@ class ReactorEnv(Env):
         s_augmented = np.append(s, FF)
 
         #Call main dymola physics dymola returns an observation, results vector and terminal state
-        ns, results, terminal = DymolaDyn(self.model, s_augmented, self.t, self.variables, self.results, self.dymola)
+        ns, results, terminal = DymolaDyn(self,self.model, s_augmented, self.t, self.variables, self.results, self.dymola)
         
-        print(ns[0])
+        #print(ns[0])
         self.state = ns
         terminated = terminal
         
@@ -306,7 +312,7 @@ def bound(x, m, M=None):
 
 
 
-def DymolaDyn(model ,y0 , t,  variables, results, dymola):
+def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
     """
     Dymola dynamics for the time step - sets the feedforward component of the PID controller in the dsin file 
     then simulates 5 seconds of the dynamics
@@ -316,7 +322,7 @@ def DymolaDyn(model ,y0 , t,  variables, results, dymola):
     
     var = "FeedForward.k ="+ str(ff)
     
-    print(var)
+    #print(var)
     dymola.ExecuteCommand(var)
 
     #calls one time step of the simulation
@@ -332,8 +338,8 @@ def DymolaDyn(model ,y0 , t,  variables, results, dymola):
         print(log)
         dymola.exit(1)
 
-    trajsize = dymola.readTrajectorySize("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
-    signals=dymola.readTrajectory("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
+    trajsize = dymola.readTrajectorySize(str(self.ALPACApath)+"/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
+    signals=dymola.readTrajectory(str(self.ALPACApath)+"/Runscripts/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
     
     for i in range(0,len(variables),1):
         results[variables[i]].extend(signals[i])
@@ -351,6 +357,6 @@ def DymolaDyn(model ,y0 , t,  variables, results, dymola):
     yout = [Tout, PumpMFlow, Qout, FF]
     
     #imports the final conditions as initial conditions for the next time step
-    dymola.ExecuteCommand('importInitial("C:/Users/localuser/Documents/GitHub/ALPACA/Runscripts/dsfinal.txt")')
+    dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/Runscripts/dsfinal.txt")')
     # We only care about the final timestep and we cleave off action value
     return yout, results, terminal;

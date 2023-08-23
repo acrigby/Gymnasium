@@ -12,7 +12,7 @@ WARN = 30
 ERROR = 40
 DISABLED = 50
 
-min_level = 30
+min_level = 40
 
 
 # Ensure DeprecationWarning to be displayed (#2685, #3059)
