@@ -58,6 +58,13 @@ register(
 )
 
 register(
+    id="AcrobotCdyn",
+    entry_point="gymnasium.envs.classic_control.acrobotCdyn:AcrobotEnv",
+    reward_threshold=-100,
+    max_episode_steps=200,
+)
+
+register(
     id="AcrobotDymola",
     entry_point="gymnasium.envs.classic_control.acrobotDymola:AcrobotEnv",
     reward_threshold=-100.0,

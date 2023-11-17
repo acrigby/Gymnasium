@@ -8,6 +8,8 @@ import gymnasium as gym
 from gymnasium import Env, spaces
 from gymnasium.envs.classic_control import utils
 from gymnasium.error import DependencyNotInstalled
+from subprocess import Popen, PIPE
+
 
 
 __copyright__ = "Copyright 2013, RLPy http://acl.mit.edu/RLPy"
