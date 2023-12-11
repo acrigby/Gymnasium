@@ -215,7 +215,7 @@ class AcrobotEnv(Env):
         # _dsdt
         s_augmented = np.append(s, torque)
 
-        ns = rk4(self._dsdt, s_augmented, [0, self.dt])
+        ns = rk4(s_augmented, [0, self.dt])
 
         ns[0] = wrap(ns[0], -pi, pi)
         ns[1] = wrap(ns[1], -pi, pi)
@@ -240,17 +240,6 @@ class AcrobotEnv(Env):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
         return bool(-cos(s[0]) - cos(s[1] + s[0]) > 1.0)
-
-    def _dsdt(self, s_augmented):
-        dsdt = Popen(['./rk4 %s %s %s %s %s %s' %(str(s_augmented[0]),str(s_augmented[1]),str(s_augmented[2]),str(s_augmented[3]),str(s_augmented[4]),str(0.2))], shell=True, stdout=PIPE, stdin=PIPE).communicate()[0]
-
-        dsdt = dsdt.decode('utf-8')
-
-        dsdt = dsdt.split(',')
-
-        output = [float(n) for n in dsdt]
-
-        return output
 
     def render(self):
         if self.render_mode is None:
@@ -392,7 +381,7 @@ def bound(x, m, M=None):
     return min(max(x, m), M)
 
 
-def rk4(derivs, y0, t):
+def rk4(y0, t):
     """
     Integrate 1-D or N-D system of ODEs using 4-th order Runge-Kutta.
 
@@ -420,13 +409,21 @@ def rk4(derivs, y0, t):
     try:
         Ny = len(y0)
     except TypeError:
-        yout = np.zeros((len(t),), np.float_)
+        yout = np.zeros((1,), np.float_)
     else:
-        yout = np.zeros((len(t), Ny), np.float_)
+        yout = np.zeros((1, Ny), np.float_)
 
-    yout[0] = y0
+    tf = t[-1]
 
-    for i in np.arange(len(t) - 1):
+    yout = Popen(['./rk4 %s %s %s %s %s %s' %(str(y0[0]),str(y0[1]),str(y0[2]),str(y0[3]),str(y0[4]), str(tf))], shell=True, stdout=PIPE, stdin=PIPE).communicate()[0]
+
+    yout = yout.decode('utf-8')
+
+    yout = yout.split(',')
+
+    output = [float(n) for n in yout]
+
+    """for i in np.arange(len(t) - 1):
         this = t[i]
         dt = t[i + 1] - this
         dt2 = dt / 2.0
@@ -436,6 +433,6 @@ def rk4(derivs, y0, t):
         k2 = np.asarray(derivs(y0 + dt2 * k1))
         k3 = np.asarray(derivs(y0 + dt2 * k2))
         k4 = np.asarray(derivs(y0 + dt * k3))
-        yout[i + 1] = y0 + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+        yout[i + 1] = y0 + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)"""
     # We only care about the final timestep and we cleave off action value which will be zero
-    return yout[-1][:4]
+    return output[:4]
