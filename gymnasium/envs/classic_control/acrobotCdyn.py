@@ -242,7 +242,7 @@ class AcrobotEnv(Env):
         return bool(-cos(s[0]) - cos(s[1] + s[0]) > 1.0)
 
     def _dsdt(self, s_augmented):
-        dsdt = Popen(['./rk4 %s %s %s %s %s' %(str(s_augmented[0]),str(s_augmented[1]),str(s_augmented[2]),str(s_augmented[3]),str(s_augmented[4]))], shell=True, stdout=PIPE, stdin=PIPE).communicate()[0]
+        dsdt = Popen(['./rk4 %s %s %s %s %s %s' %(str(s_augmented[0]),str(s_augmented[1]),str(s_augmented[2]),str(s_augmented[3]),str(s_augmented[4]),str(0.2))], shell=True, stdout=PIPE, stdin=PIPE).communicate()[0]
 
         dsdt = dsdt.decode('utf-8')
 
