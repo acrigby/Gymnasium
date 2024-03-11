@@ -3,6 +3,11 @@ from typing import Optional
 
 import numpy as np
 from numpy import cos, pi, sin
+import math
+
+import sys
+
+sys.path.append("C:/Users/aidan/projects/PythonDymola")
 
 from dymola.dymola_interface import DymolaInterface
 
@@ -104,7 +109,15 @@ class ReactorEnv(Env):
     ## References
     - OSTI report.
     """
+    
+    import threading
+    
+    global tid
+    
+    tid = threading.get_ident()
 
+    print(tid)
+    
     print(os.path.abspath(os.curdir))
     ALPACApath = os.path.abspath(os.curdir)
 
@@ -121,15 +134,17 @@ class ReactorEnv(Env):
     #open the dymola model in the environment 
     # dymola.openModel(model)
     
-    pathsfile = open(str(ALPACApath)+'/Utilities/ModelicaPaths.txt', 'r')
-    Paths = pathsfile.readlines()
-    for path in Paths:
-        path = path.strip()
-        dymola.openModel(path)
+    #pathsfile = open(str(ALPACApath)+'/Utilities/ModelicaPaths.txt', 'r')
+    #Paths = pathsfile.readlines()
+    #for path in Paths:
+        #path = path.strip()
+        #dymola.openModel(path)
 
     #Add any package dependencies to the enviroment and change working directory
     dymola.openModel(str(ALPACApath)+"/ModelicaFiles/ControlTests.mo")
-    wd = 'Modelica.Utilities.System.setWorkDirectory("' + str(ALPACApath) + '\DymolaRunData")'
+    
+    os.mkdir(str(ALPACApath) + '\DymolaRunDataPPO' + str(tid))
+    wd = 'Modelica.Utilities.System.setWorkDirectory("' + str(ALPACApath) + '\DymolaRunDataPPO' + str(tid) + '")'
     print(wd)
     dymola.ExecuteCommand(wd) 
     
@@ -140,7 +155,7 @@ class ReactorEnv(Env):
     dymola.translateModel(model)
     
     #Initialise the model and create first dsfinal file
-    result = dymola.simulateModel(model, startTime=0, stopTime = 9900, outputInterval=100, method="Esdirk45a",resultFile="SteamTurbine_L2_OpenFeedHeat_Test2")
+    result = dymola.simulateModel(model, startTime=0, stopTime = 9960, outputInterval=100, method="Esdirk45a",resultFile="SteamTurbine_L2_OpenFeedHeat_Test2")
 
     #error out if initial simulation fails
     if not result:
@@ -159,11 +174,13 @@ class ReactorEnv(Env):
         results[key] = []
 
     #define action space
-    AVAIL_MDOT =  [-0.7,-0.2,-0.1,-0.05, 0 , 0.05, 0.1, 0.2, 0.7]
-    actions_num = 9
+    #AVAIL_MDOT =  [-0.7,-0.2,-0.1,-0.05, 0 , 0.05, 0.1, 0.2, 0.7]
+    #actions_num = 9
 
     #initialise the class and major variables
     def __init__(self, render_mode: Optional[str] = None):
+        self.min_action = -1.0
+        self.max_action = 1.0
         self.render_mode = render_mode
         self.screen = None
         self.clock = None
@@ -171,16 +188,20 @@ class ReactorEnv(Env):
         #set time for one step
         self.dt = 5
         high = np.array(
-            [8, 10, 6, 10], dtype=np.float32
+            [25, 10, 15, 5], dtype=np.float32
         )
         low = np.array(
-            [-8, -10, -6, -10], dtype=np.float32
+            [-25, -10, 0, -5], dtype=np.float32
         )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
-        self.action_space = spaces.Discrete(9)
-        self.state = None
+        self.action_space = spaces.Box(
+            low=self.min_action, high=self.max_action, shape=(1,), dtype=np.float32
+        )
+        #self.state = None
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        
+        self.fflist = []
         
         super().reset(seed=seed)
         # Note that if you use custom reset bounds, it may lead to out-of-bound
@@ -193,13 +214,15 @@ class ReactorEnv(Env):
         # )
         
         #define start time
-        self.t = 9900
+        self.t = 9960
         
         #remake dictionary to hold results
         self.results = {}
         
         for key in self.variables:
             self.results[key] = []
+            
+        print(tid)
         
         #read in initial results file
         trajsize = self.dymola.readTrajectorySize(str(self.ALPACApath)+"/RunData/Original_Temp_Profile.mat")
@@ -214,14 +237,16 @@ class ReactorEnv(Env):
         Tin = self.results["BOP.sensor_T2.T"][-1]
         TCVdp = self.results["BOP.TCV.dp"][-1]
         PumpMFlow = self.results["pump_SimpleMassFlow1.m_flow"][-1]
-        Qdemand = self.results["ramp.y"][-1]
+        Qdemand = 40000000
         Qout = self.results["BOP.sensorW.W"][-1]
         FF = self.results["FeedForward.y"][-1]
+        
+        print(Tout)
         
         #import in model initial conditions
         self.dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/RunData/Starting_9900.txt")')
         
-        height = -10e6
+        height = np.random.uniform(low=-10e6, high=-6e6)
         
         self.n = range(self.t, self.t + 800, self.dt)
         self.y = {}
@@ -229,9 +254,9 @@ class ReactorEnv(Env):
             if i < 10000:
                 temp = 40000000
             elif 10000 <= i < 10100:
-                temp = (-100000*i+1040000000)
+                temp = ((height*i)/100 -100*height + 40000000)
             else:
-                temp = 30000000
+                temp = 40000000+height
             self.y[i]=temp
             
         #print(list(self.n))
@@ -255,12 +280,12 @@ class ReactorEnv(Env):
 
         return self._get_ob(), {}
 
-    def step(self, a):
+    def step(self, action: np.ndarray):
         s = self.state
         assert s is not None, "Call reset before using AcrobotEnv object."
         
         #chose feedforward signal based on action number
-        FF = self.AVAIL_MDOT[a]
+        FF = min(max(action[0], self.min_action), self.max_action)
 
 
         # Now, augment the state with our pump feedforward action so it can be passed to
@@ -268,7 +293,7 @@ class ReactorEnv(Env):
         s_augmented = np.append(s, FF)
 
         #Call main dymola physics dymola returns an observation, results vector and terminal state
-        ns, results, terminal = DymolaDyn(self,self.model, s_augmented, self.t, self.variables, self.results, self.dymola)
+        ns, results, terminal = DymolaDyn(self,self.model, s_augmented, self.t, self.variables, self.results, self.dymola, self.fflist)
         
         #print(ns[0])
         self.state = ns
@@ -301,6 +326,8 @@ class ReactorEnv(Env):
                 )
             self.steps_beyond_terminated += 1
             reward = 0.0
+        
+        reward -= math.pow(FF, 2)*3
             
         return (self._get_ob(), reward, terminated, False, {})
 
@@ -340,13 +367,20 @@ def bound(x, m, M=None):
 
 
 
-def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
+def DymolaDyn(self,model ,y0 , t,  variables, results, dymola,fflist):
     """
     Dymola dynamics for the time step - sets the feedforward component of the PID controller in the dsin file 
     then simulates 5 seconds of the dynamics
     """
     
-    ff = y0[-1]+ y0[-2]
+    ff = y0[-1] + y0[-2]
+    
+    fflist.append(ff)
+    
+    #print(fflist)
+    
+    if len(fflist)>2:
+        ff = fflist[-1]*(2/3) + fflist[-2]*(1/3)
     
     var = "FeedForward.k ="+ str(ff)
     
@@ -366,8 +400,8 @@ def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
         print(log)
         dymola.exit(1)
 
-    trajsize = dymola.readTrajectorySize(str(self.ALPACApath)+"/DymolaRunData/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
-    signals=dymola.readTrajectory(str(self.ALPACApath)+"/DymolaRunData/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
+    trajsize = dymola.readTrajectorySize(str(self.ALPACApath)+"/DymolaRunDataPPO" + str(tid) + "/SteamTurbine_L2_OpenFeedHeat_Test2.mat")
+    signals=dymola.readTrajectory(str(self.ALPACApath)+"/DymolaRunDataPPO" + str(tid) + "/SteamTurbine_L2_OpenFeedHeat_Test2.mat", variables, trajsize)
     
     for i in range(0,len(variables),1):
         results[variables[i]].extend(signals[i])
@@ -381,13 +415,14 @@ def DymolaDyn(self,model ,y0 , t,  variables, results, dymola):
     FF = results["FeedForward.y"][-1]
     
     Qdemand = self.y.get(t+2*self.dt)
-    print(Qdemand)
+   # print(Qdemand)
     
     
     
     yout = [Tout, PumpMFlow, Qdemand, FF]
+    print(yout)
     
     #imports the final conditions as initial conditions for the next time step
-    dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/DymolaRunData/dsfinal.txt")')
+    dymola.ExecuteCommand('importInitial("'+ str(self.ALPACApath) + '/DymolaRunDataPPO' + str(tid) + '/dsfinal.txt")')
     # We only care about the final timestep and we cleave off action value
     return yout, results, terminal;

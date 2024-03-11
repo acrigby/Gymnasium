@@ -92,6 +92,25 @@ register(
     max_episode_steps=100,
 )
 
+register(
+    id="Reactor-v4",
+    entry_point="gymnasium.envs.classic_control.Reactor-v4:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=100,
+)
+
+register(
+    id="Reactor-v5",
+    entry_point="gymnasium.envs.classic_control.Reactor-v5:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=50,
+)
+register(
+    id="Reactor-v6",
+    entry_point="gymnasium.envs.classic_control.Reactor-v6:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=50,
+)
 # Phys2d (jax classic control)
 # ----------------------------------------
 

@@ -65,6 +65,48 @@ register(
     max_episode_steps=200,
 )
 
+register(
+    id="ReactorDymola",
+    entry_point="gymnasium.envs.classic_control.Reactor:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=400,
+)
+
+register(
+    id="Reactor-v2",
+    entry_point="gymnasium.envs.classic_control.Reactor-v2:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=620,
+)
+
+register(
+    id="Reactor-v3",
+    entry_point="gymnasium.envs.classic_control.Reactor-v3:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=100,
+)
+
+register(
+    id="Reactor-v4",
+    entry_point="gymnasium.envs.classic_control.Reactor-v4:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=100,
+)
+
+register(
+    id="Reactor-v5",
+    entry_point="gymnasium.envs.classic_control.Reactor-v5:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=50,
+)
+
+register(
+    id="Reactor-v6",
+    entry_point="gymnasium.envs.classic_control.Reactor-v6:ReactorEnv",
+    reward_threshold=-100.0,
+    max_episode_steps=50,
+)
+
 # Phys2d (jax classic control)
 # ----------------------------------------
 
