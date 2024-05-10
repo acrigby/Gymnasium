@@ -2,20 +2,38 @@
 :tocdepth: 2
 ```
 
-# Third-Party Environments
+# External Environments
 
-The Farama Foundation maintains a number of other [projects](https://farama.org/projects), most of which use Gymnasium. Topics include:
-multi-agent RL ([PettingZoo](https://pettingzoo.farama.org/)),
-offline-RL ([Minari](https://minari.farama.org/)),
+## First-Party Environments
+The Farama Foundation maintains a number of other [projects](https://farama.org/projects), which use the Gymnasium API, environments include:
 gridworlds ([Minigrid](https://minigrid.farama.org/)),
 robotics ([Gymnasium-Robotics](https://robotics.farama.org/)),
+3D navigation ([Miniworld](https://miniworld.farama.org/)),
+web interaction ([MiniWoB++](https://miniwob.farama.org/))
+arcade games ([Arcade Learning Environment](https://github.com/Farama-Foundation/Arcade-Learning-Environment))
+Doom ([ViZDoom](https://vizdoom.farama.org/))
+Meta-objective robotics ([Metaworld](https://metaworld.farama.org/))
+autonomous driving ([HighwayEnv](https://highway-env.farama.org/))
+Retro Games ([stable-retro](https://github.com/Farama-Foundation/stable-retro)), and many more.
+
+The Farama Foundation also maintains alternate APIs for RL, including:
+multi-agent RL ([PettingZoo](https://pettingzoo.farama.org/)),
+offline-RL ([Minari](https://minari.farama.org/)),
 multi-objective RL ([MO-Gymnasium](https://mo-gymnasium.farama.org/))
-many-agent RL ([MAgent2](https://magent2.farama.org/)),
-3D navigation ([Miniworld](https://miniworld.farama.org/)), and many more.
+goal-RL ([Gymnasium-Robotics](https://robotics.farama.org/)),
+
+## Third-party environments with Gymnasium
 
 *This page contains environments which are not maintained by Farama Foundation and, as such, cannot be guaranteed to function as intended.*
 
-*If you'd like to contribute an environment, please reach out on [Discord](https://discord.gg/nHg2JRN489).*
+*If you'd like to contribute an environment, please reach out on [Discord](https://discord.gg/bnJ6kubTg6).*
+
+### [CARL: context adaptive RL](https://github.com/automl/CARL)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/automl/carl)
+
+Contextual extensions of popular reinforcement learning environments that enable training and test distributions for generalization, e.g. CartPole with variable pole lengths or Brax robots with different ground frictions.
 
 ### [DACBench: a benchmark for Dynamic Algorithm Configuration](https://github.com/automl/DACBench)
 
@@ -52,6 +70,13 @@ Environments where the agent interacts with _Cellular Automata_ by changing its 
 
 gym-jiminy presents an extension of the initial Gym for robotics using [Jiminy](https://github.com/duburcqa/jiminy), an extremely fast and light-weight simulator for poly-articulated systems using Pinocchio for physics evaluation and Meshcat for web-based 3D rendering.
 
+### [gym-pybullet-drones: Environments for quadcopter control](https://github.com/JacopoPan/gym-pybullet-drones)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/JacopoPan/gym-pybullet-drones)
+
+A simple environment using [PyBullet](https://github.com/bulletphysics/bullet3) to simulate the dynamics of a [Bitcraze Crazyflie 2.x](https://www.bitcraze.io/documentation/hardware/crazyflie_2_1/crazyflie_2_1-datasheet.pdf) nanoquadrotor.
+
 ### [gym-saturation: Environments used to prove theorems](https://github.com/inpefess/gym-saturation)
 
 ![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
@@ -65,13 +90,6 @@ An environment for guiding automated theorem provers based on saturation algorit
 ![Github stars](https://img.shields.io/github/stars/ClementPerroud/Gym-Trading-Env)
 
 Gym Trading Env simulates stock (or crypto) market from historical data. It was designed to be fast and easily customizable.
-
-### [highway-env: Autonomous driving and tactical decision-making tasks](https://github.com/eleurent/highway-env)
-
-![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
-![GitHub stars](https://img.shields.io/github/stars/eleurent/highway-env)
-
-An environment for behavioral planning in autonomous driving, with an emphasis on high-level perception and decision rather than low-level sensing and control.
 
 ### [matrix-mdp: Easily create discrete MDPs](https://github.com/Paul-543NA/matrix-mdp-gym)
 
@@ -94,6 +112,20 @@ An open, minimalist Gymnasium environment for autonomous coordination in wireles
 
 PyBullet based simulations of a robotic arm moving objects.
 
+### [pystk2-gymnasium: SuperTuxKart races gymnasium wrapper](https://github.com/bpiwowar/pystk2-gymnasium)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.29.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/bpiwowar/pystk2-gymnasium)
+
+Uses a [python wrapper](https://github.com/bpiwowar/pystk2) around [SuperTuxKart](https://supertuxkart.net/fr/Main_Page) that allows to access the world state and to control a race.
+
+### [QWOP: An environment for Bennet Foddy's game QWOP](https://github.com/smanolloff/qwop-gym)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.29.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/smanolloff/qwop-gym)
+
+QWOP is a game about running extremely fast down a 100 meter track. With this Gymnasium environment you can train your own agents and try to beat the current world record (5.0 in-game seconds for humans and 4.7 for AI).
+
 ### [Safety-Gymnasium: Ensuring safety in real-world RL scenarios](https://github.com/PKU-MARL/safety-gymnasium)
 
 ![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.28.1-blue)
@@ -101,12 +133,19 @@ PyBullet based simulations of a robotic arm moving objects.
 
 Highly scalable and customizable Safe Reinforcement Learning library.
 
-### [stable-retro: Classic retro games, a maintained version of OpenAI Retro](https://github.com/Farama-Foundation/stable-retro)
+### [SimpleGrid: a simple grid environment for Gymnasium](https://github.com/damat-le/gym-simplegrid)
 
-![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
-![GitHub stars](https://img.shields.io/github/stars/Farama-Foundation/stable-retro)
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.28.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/damat-le/gym-simplegrid)
 
-Supported fork of [gym-retro](https://openai.com/research/gym-retro): turn classic video games into Gymnasium environments.
+SimpleGrid is a super simple and minimal grid environment for Gymnasium. It is easy to use and customise and it is intended to offer an environment for rapidly testing and prototyping different RL algorithms.
+
+### [spark-sched-sim: Environments for scheduling DAG jobs in Apache Spark](https://github.com/ArchieGertsman/spark-sched-sim)
+
+spark-sched-sim simulates Spark clusters for RL-based job scheduling algorithms. Spark jobs are encoded as directed acyclic graphs (DAGs), providing opportunities to experiment with graph neural networks (GNN's) in the RL context.
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.29.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/ArchieGertsman/spark-sched-sim)
 
 ### [sumo-rl: Reinforcement Learning using SUMO traffic simulator](https://github.com/LucasAlegre/sumo-rl)
 
@@ -122,6 +161,19 @@ Gymnasium wrapper for various environments in the SUMO traffic simulator. Suppor
 
 tmrl is a distributed framework for training Deep Reinforcement Learning AIs in real-time applications. It is demonstrated on the TrackMania 2020 video game.
 
+### [EV2Gym: A Realistic EV-V2G-Gym Simulator for EV Smart Charging](https://github.com/StavrosOrf/EV2Gym)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.27.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/StavrosOrf/EV2Gym)
+
+EV2Gym is a fully customizable and easily configurable environment for Electric Vehicle (EV) smart charging simulations on a small and large scale. Also, includes non-RL baseline implementations such as mathematical programming, model predictive control, and heuristics.
+
+### [Buffalo-Gym: Multi-Armed Bandit Gymnasium](https://github.com/foreverska/buffalo-gym)
+
+![Gymnasium version dependency](https://img.shields.io/badge/Gymnasium-v0.29.1-blue)
+![GitHub stars](https://img.shields.io/github/stars/foreverska/buffalo-gym)
+
+Buffalo-Gym is a Multi-Armed Bandit (MAB) gymnasium built primarily to assist in debugging RL implementations. MABs are often easy to reason about what the agent is learning and whether it is correct. Buffalo-gym encompasses Bandits, Contextual bandits, and contextual bandits with aliasing.
 ## Third-Party Environments using Gym
 
 There are a large number of third-party environments using various versions of [Gym](https://github.com/openai/gym).
@@ -151,10 +203,6 @@ Uses The [Open 3D Engine](https://www.o3de.org/) for AI simulations and can inte
 
 A library for testing reinforcement learning algorithms on various UAVs.
 It is built on the [Bullet](https://github.com/bulletphysics/bullet3) physics engine, offers flexible rendering options, time-discrete steppable physics, Python bindings, and support for custom drones of any configuration, be it biplanes, quadcopters, rockets, and anything you can think of.
-
-### [gym-pybullet-drones: Environments for quadcopter control](https://github.com/JacopoPan/gym-pybullet-drones)
-
-A simple environment using [PyBullet](https://github.com/bulletphysics/bullet3) to simulate the dynamics of a [Bitcraze Crazyflie 2.x](https://www.bitcraze.io/documentation/hardware/crazyflie_2_1/crazyflie_2_1-datasheet.pdf) nanoquadrotor.
 
 ### [MarsExplorer: Environments for controlling robot on Mars](https://github.com/dimikout3/MarsExplorer)
 
@@ -216,21 +264,17 @@ A gym environment for a miniature racecar using the [PyBullet](https://github.co
 
 ## Other environments
 
+### [Connect-4-gym : An environment for practicing self playing](https://github.com/lucasBertola/Connect-4-Gym-env-Reinforcement-learning)
+
+Connect-4-Gym is an environment designed for creating AIs that learn by playing against themselves and assigning them an Elo rating. This environment can be used to train and evaluate reinforcement learning agents on the classic board game Connect Four.
+
 ### [CompilerGym: Optimise compiler tasks](https://github.com/facebookresearch/CompilerGym)
 
 Reinforcement learning environments for compiler optimization tasks, such as LLVM phase ordering, GCC flag tuning, and CUDA loop nest code generation.
 
-### [CARL: context adaptive RL](https://github.com/automl/CARL)
-
-Configurable reinforcement learning environments for testing generalization, e.g. CartPole with variable pole lengths or Brax robots with different ground frictions.
-
 ### [gym-sokoban: 2D Transportation Puzzles](https://github.com/mpSchrader/gym-sokoban)
 
 The environment consists of transportation puzzles in which the player's goal is to push all boxes to the warehouse's storage locations.
-
-### [DACBench: Benchmark Library for Dynamic Algorithm configuration](https://github.com/automl/DACBench)
-
-Environments for hyperparameter configuration using RL. Includes cheap surrogate benchmarks as well as real-world algorithms.
 
 ### [NLPGym: A toolkit to develop RL agents to solve NLP tasks](https://github.com/rajcscw/nlp-gym)
 

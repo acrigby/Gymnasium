@@ -10,9 +10,10 @@ import importlib.util
 import json
 import re
 import sys
-import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import Enum
+from types import ModuleType
 from typing import Any, Callable, Iterable, Sequence
 
 import gymnasium as gym
@@ -37,12 +38,14 @@ __all__ = [
     "current_namespace",
     "EnvSpec",
     "WrapperSpec",
+    "VectorizeMode",
     # Functions
     "register",
     "make",
     "make_vec",
     "spec",
     "pprint_registry",
+    "register_envs",
 ]
 
 
@@ -56,7 +59,7 @@ class EnvCreator(Protocol):
 class VectorEnvCreator(Protocol):
     """Function type expected for an environment."""
 
-    def __call__(self, **kwargs: Any) -> gym.experimental.vector.VectorEnv:
+    def __call__(self, **kwargs: Any) -> gym.vector.VectorEnv:
         ...
 
 
@@ -84,11 +87,13 @@ class EnvSpec:
     * **nondeterministic**: If the observation of an environment cannot be repeated with the same initial state, random number generator state and actions.
     * **max_episode_steps**: The max number of steps that the environment can take before truncation
     * **order_enforce**: If to enforce the order of :meth:`gymnasium.Env.reset` before :meth:`gymnasium.Env.step` and :meth:`gymnasium.Env.render` functions
-    * **autoreset**: If to automatically reset the environment on episode end
     * **disable_env_checker**: If to disable the environment checker wrapper in :meth:`gymnasium.make`, by default False (runs the environment checker)
     * **kwargs**: Additional keyword arguments passed to the environment during initialisation
     * **additional_wrappers**: A tuple of additional wrappers applied to the environment (WrapperSpec)
     * **vector_entry_point**: The location of the vectorized environment to create from
+
+    Changelogs:
+        v1.0.0 - Autoreset attribute removed
     """
 
     id: str
@@ -101,9 +106,7 @@ class EnvSpec:
     # Wrappers
     max_episode_steps: int | None = field(default=None)
     order_enforce: bool = field(default=True)
-    autoreset: bool = field(default=False)
     disable_env_checker: bool = field(default=False)
-    apply_api_compatibility: bool = field(default=False)
 
     # Environment arguments
     kwargs: dict = field(default_factory=dict)
@@ -158,7 +161,7 @@ class EnvSpec:
 
         for key, value in env_spec.items():
             if callable(value):
-                ValueError(
+                raise ValueError(
                     f"Callable found in {spec_name} for {key} attribute with value={value}. Currently, Gymnasium does not support serialising callables."
                 )
 
@@ -222,12 +225,8 @@ class EnvSpec:
             output += f"\nmax_episode_steps={self.max_episode_steps}"
         if print_all or self.order_enforce is not True:
             output += f"\norder_enforce={self.order_enforce}"
-        if print_all or self.autoreset is not False:
-            output += f"\nautoreset={self.autoreset}"
         if print_all or self.disable_env_checker is not False:
             output += f"\ndisable_env_checker={self.disable_env_checker}"
-        if print_all or self.apply_api_compatibility is not False:
-            output += f"\napplied_api_compatibility={self.apply_api_compatibility}"
 
         if print_all or self.additional_wrappers:
             wrapper_output: list[str] = []
@@ -250,6 +249,14 @@ class EnvSpec:
             return output
         else:
             print(output)
+
+
+class VectorizeMode(Enum):
+    """All possible vectorization modes used in `make_vec`."""
+
+    ASYNC = "async"
+    SYNC = "sync"
+    VECTOR_ENTRY_POINT = "vector_entry_point"
 
 
 # Global registry of environments. Meant to be accessed through `register` and `make`
@@ -523,7 +530,9 @@ def _find_spec(env_id: str) -> EnvSpec:
 
     if env_spec is None:
         _check_version_exists(ns, name, version)
-        raise error.Error(f"No registered env with id: {env_name}")
+        raise error.Error(
+            f"No registered env with id: {env_name}. Did you register it, or import the package that registers it? Use `gymnasium.pprint_registry()` to see all of the registered environments."
+        )
 
     return env_spec
 
@@ -543,53 +552,9 @@ def load_env_creator(name: str) -> EnvCreator | VectorEnvCreator:
     return fn
 
 
-def load_plugin_envs(entry_point: str = "gymnasium.envs"):
-    """Load modules (plugins) using the gymnasium entry points in order to register external module's environments on ``import gymnasium``.
-
-    Args:
-        entry_point: The string for the entry point.
-    """
-    # Load third-party environments
-    for plugin in metadata.entry_points(group=entry_point):
-        # Python 3.8 doesn't support plugin.module, plugin.attr
-        # So we'll have to try and parse this ourselves
-        module, attr = None, None
-        try:
-            module, attr = plugin.module, plugin.attr  # type: ignore  ## error: Cannot access member "attr" for type "EntryPoint"
-        except AttributeError:
-            if ":" in plugin.value:
-                module, attr = plugin.value.split(":", maxsplit=1)
-            else:
-                module, attr = plugin.value, None
-        except Exception as e:
-            logger.warn(
-                f"While trying to load plugin `{plugin}` from {entry_point}, an exception occurred: {e}"
-            )
-            module, attr = None, None
-        finally:
-            if attr is None:
-                raise error.Error(
-                    f"Gymnasium environment plugin `{module}` must specify a function to execute, not a root module"
-                )
-
-        context = namespace(plugin.name)
-        if plugin.name.startswith("__") and plugin.name.endswith("__"):
-            # `__internal__` is an artifact of the plugin system when the root namespace had an allow-list.
-            # The allow-list is now removed and plugins can register environments in the root namespace with the `__root__` magic key.
-            if plugin.name == "__root__" or plugin.name == "__internal__":
-                context = contextlib.nullcontext()
-            else:
-                logger.warn(
-                    f"The environment namespace magic key `{plugin.name}` is unsupported. "
-                    "To register an environment at the root namespace you should specify the `__root__` namespace."
-                )
-
-        with context:
-            fn = plugin.load()
-            try:
-                fn()
-            except Exception:
-                logger.warn(f"plugin: {plugin.value} raised {traceback.format_exc()}")
+def register_envs(env_module: ModuleType):
+    """A No-op function such that it can appear to IDEs that a module is used."""
+    pass
 
 
 @contextlib.contextmanager
@@ -609,12 +574,10 @@ def register(
     nondeterministic: bool = False,
     max_episode_steps: int | None = None,
     order_enforce: bool = True,
-    autoreset: bool = False,
     disable_env_checker: bool = False,
-    apply_api_compatibility: bool = False,
     additional_wrappers: tuple[WrapperSpec, ...] = (),
     vector_entry_point: VectorEnvCreator | str | None = None,
-    **kwargs: Any,
+    kwargs: dict | None = None,
 ):
     """Registers an environment in gymnasium with an ``id`` to use with :meth:`gymnasium.make` with the ``entry_point`` being a string or callable for creating the environment.
 
@@ -631,13 +594,13 @@ def register(
         max_episode_steps: The maximum number of episodes steps before truncation. Used by the :class:`gymnasium.wrappers.TimeLimit` wrapper if not ``None``.
         order_enforce: If to enable the order enforcer wrapper to ensure users run functions in the correct order.
             If ``True``, then the :class:`gymnasium.wrappers.OrderEnforcing` is applied to the environment.
-        autoreset: If to add the :class:`gymnasium.wrappers.AutoResetWrapper` such that on ``(terminated or truncated) is True``, :meth:`gymnasium.Env.reset` is called.
         disable_env_checker: If to disable the :class:`gymnasium.wrappers.PassiveEnvChecker` to the environment.
-        apply_api_compatibility: If to apply the :class:`gymnasium.wrappers.StepAPICompatibility` wrapper to the environment.
-            Use if the environment is implemented in the gym v0.21 environment API.
         additional_wrappers: Additional wrappers to apply the environment.
         vector_entry_point: The entry point for creating the vector environment
-        **kwargs: arbitrary keyword arguments which are passed to the environment constructor on initialisation.
+        kwargs: arbitrary keyword arguments which are passed to the environment constructor on initialisation.
+
+    Changelogs:
+        v1.0.0 - `autoreset` and `apply_api_compatibility` parameter was removed
     """
     assert (
         entry_point is not None or vector_entry_point is not None
@@ -645,6 +608,8 @@ def register(
     global registry, current_namespace
     ns, name, version = parse_env_id(id)
 
+    if kwargs is None:
+        kwargs = dict()
     if current_namespace is not None:
         if (
             kwargs.get("namespace") is not None
@@ -658,7 +623,6 @@ def register(
         ns_id = current_namespace
     else:
         ns_id = ns
-
     full_env_id = get_env_id(ns_id, name, version)
 
     new_spec = EnvSpec(
@@ -668,10 +632,8 @@ def register(
         nondeterministic=nondeterministic,
         max_episode_steps=max_episode_steps,
         order_enforce=order_enforce,
-        autoreset=autoreset,
         disable_env_checker=disable_env_checker,
-        apply_api_compatibility=apply_api_compatibility,
-        **kwargs,
+        kwargs=kwargs,
         additional_wrappers=additional_wrappers,
         vector_entry_point=vector_entry_point,
     )
@@ -685,8 +647,6 @@ def register(
 def make(
     id: str | EnvSpec,
     max_episode_steps: int | None = None,
-    autoreset: bool | None = None,
-    apply_api_compatibility: bool | None = None,
     disable_env_checker: bool | None = None,
     **kwargs: Any,
 ) -> Env:
@@ -697,12 +657,9 @@ def make(
     Args:
         id: A string for the environment id or a :class:`EnvSpec`. Optionally if using a string, a module to import can be included, e.g. ``'module:Env-v0'``.
             This is equivalent to importing the module first to register the environment followed by making the environment.
-        max_episode_steps: Maximum length of an episode, can override the registered :class:`EnvSpec` ``max_episode_steps``.
-            The value is used by :class:`gymnasium.wrappers.TimeLimit`.
-        autoreset: Whether to automatically reset the environment after each episode (:class:`gymnasium.wrappers.AutoResetWrapper`).
-        apply_api_compatibility: Whether to wrap the environment with the :class:`gymnasium.wrappers.StepAPICompatibility` wrapper that
-            converts the environment step from a done bool to return termination and truncation bools.
-            By default, the argument is None in which the :class:`EnvSpec` ``apply_api_compatibility`` is used, otherwise this variable is used in favor.
+        max_episode_steps: Maximum length of an episode, can override the registered :class:`EnvSpec` ``max_episode_steps``
+            with the value being passed to :class:`gymnasium.wrappers.TimeLimit`.
+            Using ``max_episode_steps=-1`` will not apply the wrapper to the environment.
         disable_env_checker: If to add :class:`gymnasium.wrappers.PassiveEnvChecker`, ``None`` will default to the
             :class:`EnvSpec` ``disable_env_checker`` value otherwise use this value will be used.
         kwargs: Additional arguments to pass to the environment constructor.
@@ -712,6 +669,9 @@ def make(
 
     Raises:
         Error: If the ``id`` doesn't exist in the :attr:`registry`
+
+    Changelogs:
+        v1.0.0 - `autoreset` and `apply_api_compatibility` was removed
     """
     if isinstance(id, EnvSpec):
         env_spec = id
@@ -777,14 +737,6 @@ def make(
                 f"that is not in the possible render_modes ({render_modes})."
             )
 
-    if apply_api_compatibility or (
-        apply_api_compatibility is None and env_spec.apply_api_compatibility
-    ):
-        # If we use the compatibility layer, we treat the render mode explicitly and don't pass it to the env creator
-        render_mode = env_spec_kwargs.pop("render_mode", None)
-    else:
-        render_mode = None
-
     try:
         env = env_creator(**env_spec_kwargs)
     except TypeError as e:
@@ -802,6 +754,21 @@ def make(
                 f"{e} was raised from the environment creator for {env_spec.id} with kwargs ({env_spec_kwargs})"
             )
 
+    if not isinstance(env, gym.Env):
+        if (
+            str(env.__class__.__base__) == "<class 'gym.core.Env'>"
+            or str(env.__class__.__base__) == "<class 'gym.core.Wrapper'>"
+        ):
+            raise TypeError(
+                "Gym is incompatible with Gymnasium, please update the environment class to `gymnasium.Env`. "
+                "See https://gymnasium.farama.org/introduction/create_custom_env/ for more info."
+            )
+        else:
+            raise TypeError(
+                f"The environment must inherit from the gymnasium.Env class, actual class: {type(env)}. "
+                "See https://gymnasium.farama.org/introduction/create_custom_env/ for more info."
+            )
+
     # Set the minimal env spec for the environment.
     env.unwrapped.spec = EnvSpec(
         id=env_spec.id,
@@ -810,9 +777,7 @@ def make(
         nondeterministic=env_spec.nondeterministic,
         max_episode_steps=None,
         order_enforce=False,
-        autoreset=False,
         disable_env_checker=True,
-        apply_api_compatibility=False,
         kwargs=env_spec_kwargs,
         additional_wrappers=(),
         vector_entry_point=env_spec.vector_entry_point,
@@ -832,12 +797,6 @@ def make(
                 f"The environment's wrapper spec {recreated_wrapper_spec} is different from the saved `EnvSpec` additional wrapper {env_spec_wrapper_spec}"
             )
 
-    # Add step API wrapper
-    if apply_api_compatibility is True or (
-        apply_api_compatibility is None and env_spec.apply_api_compatibility is True
-    ):
-        env = gym.wrappers.EnvCompatibility(env, render_mode)
-
     # Run the environment checker as the lowest level wrapper
     if disable_env_checker is False or (
         disable_env_checker is None and env_spec.disable_env_checker is False
@@ -849,14 +808,11 @@ def make(
         env = gym.wrappers.OrderEnforcing(env)
 
     # Add the time limit wrapper
-    if max_episode_steps is not None:
-        env = gym.wrappers.TimeLimit(env, max_episode_steps)
-    elif env_spec.max_episode_steps is not None:
-        env = gym.wrappers.TimeLimit(env, env_spec.max_episode_steps)
-
-    # Add the auto-reset wrapper
-    if autoreset is True or (autoreset is None and env_spec.autoreset is True):
-        env = gym.wrappers.AutoResetWrapper(env)
+    if max_episode_steps != -1:
+        if max_episode_steps is not None:
+            env = gym.wrappers.TimeLimit(env, max_episode_steps)
+        elif env_spec.max_episode_steps is not None:
+            env = gym.wrappers.TimeLimit(env, env_spec.max_episode_steps)
 
     for wrapper_spec in env_spec.additional_wrappers[num_prior_wrappers:]:
         if wrapper_spec.kwargs is None:
@@ -878,25 +834,25 @@ def make(
 def make_vec(
     id: str | EnvSpec,
     num_envs: int = 1,
-    vectorization_mode: str = "async",
+    vectorization_mode: VectorizeMode | str | None = None,
     vector_kwargs: dict[str, Any] | None = None,
     wrappers: Sequence[Callable[[Env], Wrapper]] | None = None,
     **kwargs,
-) -> gym.experimental.vector.VectorEnv:
+) -> gym.vector.VectorEnv:
     """Create a vector environment according to the given ID.
 
-    Note:
-        This feature is experimental, and is likely to change in future releases.
-
-    To find all available environments use `gymnasium.envs.registry.keys()` for all valid ids.
+    To find all available environments use :func:`gymnasium.pprint_registry` or ``gymnasium.registry.keys()`` for all valid ids.
+    We refer to the Vector environment as the vectorizor while the environment being vectorized is the base or vectorized environment (``vectorizor(vectorized env)``).
 
     Args:
-        id: Name of the environment. Optionally, a module to import can be included, eg. 'module:Env-v0'
+        id: Name of the environment. Optionally, a module to import can be included, e.g. 'module:Env-v0'
         num_envs: Number of environments to create
-        vectorization_mode: How to vectorize the environment. Can be either "async", "sync" or "custom"
-        vector_kwargs: Additional arguments to pass to the vectorized environment constructor.
-        wrappers: A sequence of wrapper functions to apply to the environment. Can only be used in "sync" or "async" mode.
-        **kwargs: Additional arguments to pass to the environment constructor.
+        vectorization_mode: The vectorization method used, defaults to ``None`` such that if env id' spec has a ``vector_entry_point`` (not ``None``),
+            this is first used otherwise defaults to ``sync`` to use the :class:`gymnasium.vector.SyncVectorEnv`.
+            Valid modes are ``"async"``, ``"sync"`` or ``"vector_entry_point"``. Recommended to use the :class:`VectorizeMode` enum rather than strings.
+        vector_kwargs: Additional arguments to pass to the vectorizor environment constructor, i.e., ``SyncVectorEnv(..., **vector_kwargs)``.
+        wrappers: A sequence of wrapper functions to apply to the base environment. Can only be used in ``"sync"`` or ``"async"`` mode.
+        **kwargs: Additional arguments passed to the base environment constructor.
 
     Returns:
         An instance of the environment.
@@ -906,87 +862,120 @@ def make_vec(
     """
     if vector_kwargs is None:
         vector_kwargs = {}
-
     if wrappers is None:
         wrappers = []
 
     if isinstance(id, EnvSpec):
-        spec_ = id
+        env_spec = id
+    elif isinstance(id, str):
+        env_spec = _find_spec(id)
     else:
-        spec_ = _find_spec(id)
+        raise error.Error(f"Invalid id type: {type(id)}. Expected `str` or `EnvSpec`")
 
-    _kwargs = spec_.kwargs.copy()
-    _kwargs.update(kwargs)
+    env_spec = copy.deepcopy(env_spec)
+    env_spec_kwargs = env_spec.kwargs
+    # for sync or async, these parameters should be passed in `make(..., **kwargs)` rather than in the env spec kwargs, therefore, we `reset` the kwargs
+    env_spec.kwargs = dict()
 
-    # Check if we have the necessary entry point
-    if vectorization_mode in ("sync", "async"):
-        if spec_.entry_point is None:
-            raise error.Error(
-                f"Cannot create vectorized environment for {id} because it doesn't have an entry point defined."
+    num_envs = env_spec_kwargs.pop("num_envs", num_envs)
+    vectorization_mode = env_spec_kwargs.pop("vectorization_mode", vectorization_mode)
+    vector_kwargs = env_spec_kwargs.pop("vector_kwargs", vector_kwargs)
+    wrappers = env_spec_kwargs.pop("wrappers", wrappers)
+
+    env_spec_kwargs.update(kwargs)
+
+    # Specify the vectorization mode if None or update to a `VectorizeMode`
+    if vectorization_mode is None:
+        if env_spec.vector_entry_point is not None:
+            vectorization_mode = VectorizeMode.VECTOR_ENTRY_POINT
+        else:
+            vectorization_mode = VectorizeMode.SYNC
+    else:
+        try:
+            vectorization_mode = VectorizeMode(vectorization_mode)
+        except ValueError:
+            raise ValueError(
+                f"Invalid vectorization mode: {vectorization_mode!r}, "
+                f"valid modes: {[mode.value for mode in VectorizeMode]}"
             )
-        entry_point = spec_.entry_point
-    elif vectorization_mode in ("custom",):
-        if spec_.vector_entry_point is None:
+    assert isinstance(vectorization_mode, VectorizeMode)
+
+    def create_single_env() -> Env:
+        single_env = make(env_spec, **env_spec_kwargs.copy())
+
+        if wrappers is None:
+            return single_env
+
+        for wrapper in wrappers:
+            single_env = wrapper(single_env)
+        return single_env
+
+    if vectorization_mode == VectorizeMode.SYNC:
+        if env_spec.entry_point is None:
+            raise error.Error(
+                f"Cannot create vectorized environment for {env_spec.id} because it doesn't have an entry point defined."
+            )
+
+        env = gym.vector.SyncVectorEnv(
+            env_fns=(create_single_env for _ in range(num_envs)),
+            **vector_kwargs,
+        )
+    elif vectorization_mode == VectorizeMode.ASYNC:
+        if env_spec.entry_point is None:
+            raise error.Error(
+                f"Cannot create vectorized environment for {env_spec.id} because it doesn't have an entry point defined."
+            )
+
+        env = gym.vector.AsyncVectorEnv(
+            env_fns=[create_single_env for _ in range(num_envs)],
+            **vector_kwargs,
+        )
+
+    elif vectorization_mode == VectorizeMode.VECTOR_ENTRY_POINT:
+        if len(vector_kwargs) > 0:
+            raise error.Error(
+                f"Custom vector environment can be passed arguments only through kwargs and `vector_kwargs` is not empty ({vector_kwargs})"
+            )
+        elif len(wrappers) > 0:
+            raise error.Error(
+                f"Cannot use `vector_entry_point` vectorization mode with the wrappers argument ({wrappers})."
+            )
+        elif len(env_spec.additional_wrappers) > 0:
+            raise error.Error(
+                f"Cannot use `vector_entry_point` vectorization mode with the additional_wrappers parameter in spec being not empty ({env_spec.additional_wrappers})."
+            )
+
+        entry_point = env_spec.vector_entry_point
+        if entry_point is None:
             raise error.Error(
                 f"Cannot create vectorized environment for {id} because it doesn't have a vector entry point defined."
             )
-        entry_point = spec_.vector_entry_point
+        elif callable(entry_point):
+            env_creator = entry_point
+        else:  # Assume it's a string
+            env_creator = load_env_creator(entry_point)
+
+        if (
+            env_spec.max_episode_steps is not None
+            and "max_episode_steps" not in env_spec_kwargs
+        ):
+            env_spec_kwargs["max_episode_steps"] = env_spec.max_episode_steps
+
+        env = env_creator(num_envs=num_envs, **env_spec_kwargs)
     else:
-        raise error.Error(f"Invalid vectorization mode: {vectorization_mode}")
-
-    if callable(entry_point):
-        env_creator = entry_point
-    else:
-        # Assume it's a string
-        env_creator = load_env_creator(entry_point)
-
-    def _create_env():
-        # Env creator for use with sync and async modes
-        _kwargs_copy = _kwargs.copy()
-
-        render_mode = _kwargs.get("render_mode", None)
-        if render_mode is not None:
-            inner_render_mode = (
-                render_mode[: -len("_list")]
-                if render_mode.endswith("_list")
-                else render_mode
-            )
-            _kwargs_copy["render_mode"] = inner_render_mode
-
-        _env = env_creator(**_kwargs_copy)
-        _env.spec = spec_
-        if spec_.max_episode_steps is not None:
-            _env = gym.wrappers.TimeLimit(_env, spec_.max_episode_steps)
-
-        if render_mode is not None and render_mode.endswith("_list"):
-            _env = gym.wrappers.RenderCollection(_env)
-
-        for wrapper in wrappers:
-            _env = wrapper(_env)
-        return _env
-
-    if vectorization_mode == "sync":
-        env = gym.experimental.vector.SyncVectorEnv(
-            env_fns=[_create_env for _ in range(num_envs)],
-            **vector_kwargs,
-        )
-    elif vectorization_mode == "async":
-        env = gym.experimental.vector.AsyncVectorEnv(
-            env_fns=[_create_env for _ in range(num_envs)],
-            **vector_kwargs,
-        )
-    elif vectorization_mode == "custom":
-        if len(wrappers) > 0:
-            raise error.Error("Cannot use custom vectorization mode with wrappers.")
-        vector_kwargs["max_episode_steps"] = spec_.max_episode_steps
-        env = env_creator(num_envs=num_envs, **vector_kwargs)
-    else:
-        raise error.Error(f"Invalid vectorization mode: {vectorization_mode}")
+        raise error.Error(f"Unknown vectorization mode: {vectorization_mode}")
 
     # Copies the environment creation specification and kwargs to add to the environment specification details
-    spec_ = copy.deepcopy(spec_)
-    spec_.kwargs = _kwargs
-    env.unwrapped.spec = spec_
+    copied_id_spec = copy.deepcopy(env_spec)
+    copied_id_spec.kwargs = env_spec_kwargs
+    if num_envs != 1:
+        copied_id_spec.kwargs["num_envs"] = num_envs
+    copied_id_spec.kwargs["vectorization_mode"] = vectorization_mode.value
+    if len(vector_kwargs) > 0:
+        copied_id_spec.kwargs["vector_kwargs"] = vector_kwargs
+    if len(wrappers) > 0:
+        copied_id_spec.kwargs["wrappers"] = wrappers
+    env.unwrapped.spec = copied_id_spec
 
     return env
 
@@ -1035,7 +1024,7 @@ def pprint_registry(
             or to print the string to console.
     """
     # Defaultdict to store environment ids according to namespace.
-    namespace_envs: dict[str, list[str]] = defaultdict(lambda: [])
+    namespace_envs: dict[str, list[str]] = defaultdict(list)
     max_justify = float("-inf")
 
     # Find the namespace associated with each environment spec

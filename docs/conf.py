@@ -8,19 +8,22 @@
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+# documentation root, use os.path.abspath to make it absolute.
 
 # -- Project information -----------------------------------------------------
 import os
 import re
+import sys
 
 import sphinx_gallery.gen_rst
+from furo.gen_tutorials import generate_tutorials
 
-import gymnasium
+
+# Path setup for building from source tree
+sys.path.insert(0, os.path.abspath("."))  # For building from root
+sys.path.insert(0, os.path.abspath(".."))  # For building from docs dir
+
+import gymnasium  # noqa: E402
 
 
 project = "Gymnasium"
@@ -38,10 +41,10 @@ release = gymnasium.__version__
 # ones.
 extensions = [
     "sphinx.ext.napoleon",
-    "sphinx.ext.doctest",
     "sphinx.ext.autodoc",
     "sphinx.ext.githubpages",
     "sphinx.ext.viewcode",
+    "sphinx.ext.coverage",
     "myst_parser",
     "furo.gen_tutorials",
     "sphinx_gallery.gen_gallery",
@@ -127,6 +130,7 @@ sphinx_gallery_conf = {
     "ignore_pattern": r"__init__\.py",
     "examples_dirs": "./tutorials",
     "gallery_dirs": "./tutorials",
+    "copyfile_regex": r"./tutorials/.*\.md",
     "show_signature": False,
     "show_memory": False,
     "min_reported_time": float("inf"),
@@ -135,6 +139,12 @@ sphinx_gallery_conf = {
         os.path.dirname(__file__), "_static/img/gymnasium-github.png"
     ),
 }
+
+# All tutorials in the tutorials directory will be generated automatically
+# by sphinx-gallery.
+# However, we also want to generate some tutorials without the gallery
+# and to a more specific location so we use this custom function.
+generate_tutorials("introduction/*.py", "./introduction")
 
 # -- Generate Changelog -------------------------------------------------
 

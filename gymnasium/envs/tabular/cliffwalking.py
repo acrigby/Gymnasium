@@ -12,9 +12,9 @@ import numpy as np
 from jax.random import PRNGKey
 
 from gymnasium import spaces
+from gymnasium.envs.functional_jax_env import FunctionalJaxEnv
 from gymnasium.error import DependencyNotInstalled
-from gymnasium.experimental.functional import ActType, FuncEnv, StateType
-from gymnasium.experimental.functional_jax_env import FunctionalJaxEnv
+from gymnasium.functional import ActType, FuncEnv, StateType
 from gymnasium.utils import EzPickle
 from gymnasium.wrappers import HumanRendering
 
@@ -62,7 +62,7 @@ def fell_off(player_position):
 
 
 class CliffWalkingFunctional(
-    FuncEnv[jax.Array, jax.Array, int, float, bool, RenderStateType]
+    FuncEnv[jax.Array, jax.Array, int, float, bool, RenderStateType, None]
 ):
     """Cliff walking involves crossing a gridworld from start to goal while avoiding falling off a cliff.
 
@@ -96,9 +96,9 @@ class CliffWalkingFunctional(
     the positions of the first 3 rows plus the bottom-left cell.
 
     The observation is a value representing the player's current position as
-    current_row * nrows + current_col (where both the row and col start at 0).
+    current_row * ncols + current_col (where both the row and col start at 0).
 
-    For example, the stating position can be calculated as follows: 3 * 12 + 0 = 36.
+    For example, the starting position can be calculated as follows: 3 * 12 + 0 = 36.
 
     The observation is returned as an `numpy.ndarray` with shape `(1,)` and dtype `numpy.int32` .
 
@@ -139,7 +139,13 @@ class CliffWalkingFunctional(
         "render_fps": 4,
     }
 
-    def transition(self, state: EnvState, action: int | jax.Array, key: PRNGKey):
+    def transition(
+        self,
+        state: EnvState,
+        action: int | jax.Array,
+        key: PRNGKey,
+        params: None = None,
+    ):
         """The Cliffwalking environment's state transition function."""
         new_position = state.player_position
 
@@ -175,25 +181,29 @@ class CliffWalkingFunctional(
 
         return new_state
 
-    def initial(self, rng: PRNGKey) -> EnvState:
+    def initial(self, rng: PRNGKey, params: None = None) -> EnvState:
         """Cliffwalking initial observation function."""
         player_position = jnp.array([3, 0])
 
         state = EnvState(player_position=player_position, last_action=-1, fallen=False)
         return state
 
-    def observation(self, state: EnvState) -> int:
+    def observation(self, state: EnvState, params: None = None) -> int:
         """Cliffwalking observation."""
         return jnp.array(
             state.player_position[0] * 12 + state.player_position[1]
         ).reshape((1,))
 
-    def terminal(self, state: EnvState) -> jax.Array:
+    def terminal(self, state: EnvState, params: None = None) -> jax.Array:
         """Determines if a particular Cliffwalking observation is terminal."""
         return jnp.array_equal(state.player_position, jnp.array([3, 11]))
 
     def reward(
-        self, state: EnvState, action: ActType, next_state: StateType
+        self,
+        state: EnvState,
+        action: ActType,
+        next_state: StateType,
+        params: None = None,
     ) -> jax.Array:
         """Calculates reward from a state."""
         state = next_state
@@ -208,7 +218,7 @@ class CliffWalkingFunctional(
             import pygame
         except ImportError:
             raise DependencyNotInstalled(
-                "pygame is not installed, run `pip install gymnasium[classic_control]`"
+                'pygame is not installed, run `pip install "gymnasium[classic_control]"`'
             )
 
         cell_size = (60, 60)
@@ -285,16 +295,14 @@ class CliffWalkingFunctional(
         )
 
     def render_image(
-        self,
-        state: StateType,
-        render_state: RenderStateType,
+        self, state: StateType, render_state: RenderStateType, params: None = None
     ) -> tuple[RenderStateType, np.ndarray]:
         """Renders an image from a state."""
         try:
             import pygame
         except ImportError:
             raise DependencyNotInstalled(
-                "pygame is not installed, run `pip install gymnasium[toy_text]`"
+                'pygame is not installed, run `pip install "gymnasium[toy_text]"`'
             )
         (
             window_surface,
@@ -341,7 +349,7 @@ class CliffWalkingFunctional(
             import pygame
         except ImportError as e:
             raise DependencyNotInstalled(
-                "pygame is not installed, run `pip install gymnasium[toy-text]`"
+                'pygame is not installed, run `pip install "gymnasium[toy-text]"`'
             ) from e
         pygame.display.quit()
         pygame.quit()
@@ -350,7 +358,7 @@ class CliffWalkingFunctional(
 class CliffWalkingJaxEnv(FunctionalJaxEnv, EzPickle):
     """A Gymnasium Env wrapper for the functional cliffwalking env."""
 
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 50}
+    metadata = {"render_modes": ["rgb_array"], "render_fps": 50, "jax": True}
 
     def __init__(self, render_mode: str | None = None, **kwargs):
         """Initializes Gym wrapper for cliffwalking functional env."""

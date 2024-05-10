@@ -87,12 +87,12 @@ class MultiDiscrete(Space[NDArray[np.integer]]):
         """Generates a single random sample this space.
 
         Args:
-            mask: An optional mask for multi-discrete, expects tuples with a `np.ndarray` mask in the position of each
-                action with shape `(n,)` where `n` is the number of actions and `dtype=np.int8`.
-                Only mask values == 1 are possible to sample unless all mask values for an action are 0 then the default action `self.start` (the smallest element) is sampled.
+            mask: An optional mask for multi-discrete, expects tuples with a ``np.ndarray`` mask in the position of each
+                action with shape ``(n,)`` where ``n`` is the number of actions and ``dtype=np.int8``.
+                Only ``mask values == 1`` are possible to sample unless all mask values for an action are ``0`` then the default action ``self.start`` (the smallest element) is sampled.
 
         Returns:
-            An `np.ndarray` of shape `space.shape`
+            An ``np.ndarray`` of :meth:`Space.shape`
         """
         if mask is not None:
 
@@ -172,7 +172,7 @@ class MultiDiscrete(Space[NDArray[np.integer]]):
         self, sample_n: list[Sequence[int]]
     ) -> list[NDArray[np.integer[Any]]]:
         """Convert a JSONable data type to a batch of samples from this space."""
-        return [np.array(sample) for sample in sample_n]
+        return [np.array(sample, dtype=np.int64) for sample in sample_n]
 
     def __repr__(self):
         """Gives a string representation of this space."""
@@ -206,6 +206,8 @@ class MultiDiscrete(Space[NDArray[np.integer]]):
         """Check whether ``other`` is equivalent to this instance."""
         return bool(
             isinstance(other, MultiDiscrete)
+            and self.dtype == other.dtype
+            and self.shape == other.shape
             and np.all(self.nvec == other.nvec)
             and np.all(self.start == other.start)
         )

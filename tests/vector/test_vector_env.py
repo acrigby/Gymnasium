@@ -1,18 +1,20 @@
+"""Test vector environment implementations."""
+
 from functools import partial
 
 import numpy as np
 import pytest
 
-from gymnasium.spaces import Discrete, Tuple
-from gymnasium.vector.async_vector_env import AsyncVectorEnv
-from gymnasium.vector.sync_vector_env import SyncVectorEnv
-from gymnasium.vector.vector_env import VectorEnv
+from gymnasium.spaces import Discrete
+from gymnasium.utils.env_checker import data_equivalence
+from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 from tests.testing_env import GenericTestEnv
-from tests.vector.utils import CustomSpace, make_env
+from tests.vector.testing_utils import make_env
 
 
 @pytest.mark.parametrize("shared_memory", [True, False])
 def test_vector_env_equal(shared_memory):
+    """Test that vector environment are equal for both async and sync variants."""
     env_fns = [make_env("CartPole-v1", i) for i in range(4)]
     num_steps = 100
 
@@ -28,39 +30,35 @@ def test_vector_env_equal(shared_memory):
     async_observations, async_infos = async_env.reset(seed=0)
     sync_observations, sync_infos = sync_env.reset(seed=0)
     assert np.all(async_observations == sync_observations)
+    assert data_equivalence(async_infos, sync_infos)
 
     for _ in range(num_steps):
         actions = async_env.action_space.sample()
         assert actions in sync_env.action_space
 
-        # fmt: off
-        async_observations, async_rewards, async_terminateds, async_truncateds, async_infos = async_env.step(actions)
-        sync_observations, sync_rewards, sync_terminateds, sync_truncateds, sync_infos = sync_env.step(actions)
-        # fmt: on
-
-        if any(sync_terminateds) or any(sync_truncateds):
-            assert "final_observation" in async_infos
-            assert "_final_observation" in async_infos
-            assert "final_observation" in sync_infos
-            assert "_final_observation" in sync_infos
+        (
+            async_observations,
+            async_rewards,
+            async_terminations,
+            async_truncations,
+            async_infos,
+        ) = async_env.step(actions)
+        (
+            sync_observations,
+            sync_rewards,
+            sync_terminations,
+            sync_truncations,
+            sync_infos,
+        ) = sync_env.step(actions)
 
         assert np.all(async_observations == sync_observations)
         assert np.all(async_rewards == sync_rewards)
-        assert np.all(async_terminateds == sync_terminateds)
-        assert np.all(async_truncateds == sync_truncateds)
+        assert np.all(async_terminations == sync_terminations)
+        assert np.all(async_truncations == sync_truncations)
+        assert data_equivalence(async_infos, sync_infos)
 
     async_env.close()
     sync_env.close()
-
-
-def test_custom_space_vector_env():
-    env = VectorEnv(4, CustomSpace(), CustomSpace())
-
-    assert isinstance(env.single_observation_space, CustomSpace)
-    assert isinstance(env.observation_space, Tuple)
-
-    assert isinstance(env.single_action_space, CustomSpace)
-    assert isinstance(env.action_space, Tuple)
 
 
 @pytest.mark.parametrize(
@@ -114,12 +112,56 @@ def test_final_obs_info(vectoriser):
     )
 
     obs, _, termination, _, info = env.step([3])
+    assert obs == np.array([0]) and info == {"action": 3, "_action": np.array([True])}
+
+    obs, _, terminated, _, info = env.step([4])
     assert (
         obs == np.array([0])
         and termination == np.array([True])
         and info["reset"] == np.array([True])
     )
-    assert "final_observation" in info and "final_info" in info
-    assert info["final_observation"] == np.array([0]) and info["final_info"] == {
-        "action": 3
-    }
+
+    env.close()
+
+
+@pytest.fixture
+def example_env_list():
+    """Example vector environment."""
+    return [make_env("CartPole-v1", i) for i in range(4)]
+
+
+@pytest.mark.parametrize(
+    "venv_constructor",
+    [
+        SyncVectorEnv,
+        partial(AsyncVectorEnv, shared_memory=True),
+        partial(AsyncVectorEnv, shared_memory=False),
+    ],
+)
+def test_random_seeding_basics(venv_constructor, example_env_list):
+    seed = 42
+    vector_env = venv_constructor(example_env_list)
+    vector_env.reset(seed=seed)
+    assert vector_env.np_random_seed == tuple(
+        seed + i for i in range(vector_env.num_envs)
+    )
+    # resetting with seed=None means seed remains the same
+    vector_env.reset(seed=None)
+    assert vector_env.np_random_seed == tuple(
+        seed + i for i in range(vector_env.num_envs)
+    )
+
+
+@pytest.mark.parametrize(
+    "venv_constructor",
+    [
+        SyncVectorEnv,
+        partial(AsyncVectorEnv, shared_memory=True),
+        partial(AsyncVectorEnv, shared_memory=False),
+    ],
+)
+def test_random_seeds_set_at_retrieval(venv_constructor, example_env_list):
+    vector_env = venv_constructor(example_env_list)
+    assert len(set(vector_env.np_random_seed)) == vector_env.num_envs
+    # default seed starts at zero. Adjust or remove this test if the default seed changes
+    assert vector_env.np_random_seed == tuple(range(vector_env.num_envs))

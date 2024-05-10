@@ -114,7 +114,7 @@ class FrozenLakeEnv(Env):
 
     ## Observation Space
     The observation is a value representing the player's current position as
-    current_row * nrows + current_col (where both the row and col start at 0).
+    current_row * ncols + current_col (where both the row and col start at 0).
 
     For example, the goal position in the 4x4 map can be calculated as follows: 3 * 4 + 3 = 15.
     The number of possible observations is dependent on the size of the map.
@@ -306,7 +306,8 @@ class FrozenLakeEnv(Env):
 
         if self.render_mode == "human":
             self.render()
-        return (int(s), r, t, False, {"prob": p})
+        # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
+        return int(s), r, t, False, {"prob": p}
 
     def reset(
         self,
@@ -342,7 +343,7 @@ class FrozenLakeEnv(Env):
             import pygame
         except ImportError as e:
             raise DependencyNotInstalled(
-                "pygame is not installed, run `pip install gymnasium[toy-text]`"
+                'pygame is not installed, run `pip install "gymnasium[toy-text]"`'
             ) from e
 
         if self.window_surface is None:
